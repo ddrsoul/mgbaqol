@@ -107,7 +107,7 @@ Checked so far:
 |---|---|---|---|---|---|
 | Emerald Enhanced v1.1.0.21 | yes | yes | yes | yes | yes |
 | Pokémon Odyssey v4.1.1 | yes | yes | yes | yes | yes |
-| Pokémon Unbound v2.1.1.1 | yes | not yet | not yet | not yet | region map only |
+| Pokémon Unbound v2.1.1.1 | yes | yes | yes | yes | yes |
 
 Odyssey stores Pokémon data unencrypted and widens bag pocket sizes; both
 are recognised automatically.
