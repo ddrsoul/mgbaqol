@@ -14,6 +14,8 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             info = zipfile.ZipInfo.from_file(path, os.path.relpath(path, "build"))
             if name.endswith(".sh") or name.startswith("autostart") or name == "patch_runemu.py":
                 info.external_attr = 0o100755 << 16
+            else:
+                info.external_attr = 0o100644 << 16
             with open(path, "rb") as f:
                 z.writestr(info, f.read(), zipfile.ZIP_DEFLATED)
 print(out)
