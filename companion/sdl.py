@@ -43,6 +43,7 @@ EV_QUIT = 0x100
 EV_WINDOW = 0x200
 EV_MOUSEDOWN, EV_MOUSEUP = 0x401, 0x402
 EV_FINGERDOWN, EV_FINGERUP = 0x700, 0x701
+EV_USER = 0x8000
 TOUCH_MOUSEID = 0xFFFFFFFF
 
 Init = _bind(_sdl, "SDL_Init", c_int, c_uint32)
@@ -69,6 +70,7 @@ DestroyTexture = _bind(_sdl, "SDL_DestroyTexture", None, c_void_p)
 FreeSurface = _bind(_sdl, "SDL_FreeSurface", None, c_void_p)
 WaitEventTimeout = _bind(_sdl, "SDL_WaitEventTimeout", c_int, c_void_p, c_int)
 PollEvent = _bind(_sdl, "SDL_PollEvent", c_int, c_void_p)
+PushEvent = _bind(_sdl, "SDL_PushEvent", c_int, c_void_p)
 
 TTF_Init = _bind(_ttf, "TTF_Init", c_int)
 TTF_OpenFont = _bind(_ttf, "TTF_OpenFont", c_void_p, c_char_p, c_int)

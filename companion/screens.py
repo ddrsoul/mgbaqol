@@ -222,6 +222,20 @@ class Screens:
             if k < len(items):
                 self.ui["item"] = items[k][0]
 
+    def bag_step(self, step, snap):
+        """Stick up/down: the previous/next item of the pocket, turning pages as needed."""
+        bag = snap.get("bag")
+        if not bag or not step:
+            return
+        items = bag[min(self.ui.get("pocket", 0), len(bag) - 1)][1]
+        if not items:
+            return
+        ids = [item for item, _ in items]
+        cur = self.ui.get("item")
+        k = (ids.index(cur) + step) % len(ids) if cur in ids else (0 if step > 0 else len(ids) - 1)
+        self.ui["item"] = ids[k]
+        self.ui["page"] = k // BAG_ROWS
+
     # ---------- map ----------
 
     MAP_MODES = ("Map", "Wild")
@@ -331,6 +345,17 @@ class Screens:
         if len(entries) > WILD_COLS * WILD_ROWS:
             self.text("+%d" % (len(entries) - WILD_COLS * WILD_ROWS), x + w - 8, y + hgt - 18, MUTED, None, "right")
         self._wild_chips = (y0, cw, names)
+
+    def wild_step(self, step, snap):
+        """Stick up/down on Wild: the previous/next way of finding Pokemon."""
+        loc = snap.get("location")
+        if self.ui.get("map_mode", "Map") != "Wild" or not loc or loc.get("group") is None or not step:
+            return
+        names = list(self.wild_modes(loc))
+        if names:
+            cur = self.ui.get("method")
+            k = names.index(cur) if cur in names else 0
+            self.ui["method"] = names[(k + step) % len(names)]
 
     def map_tap(self, x, y, snap):
         top = TAB_H + PAD

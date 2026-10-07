@@ -8,6 +8,7 @@
 import argparse
 import ctypes
 import os
+import queue
 import signal
 import struct
 import subprocess
@@ -22,6 +23,7 @@ from memory import GameMemory
 from ra import RetroArch
 from romdata import RomData
 from screens import Screens
+from stick import RightStick
 from theme import *  # noqa: F401,F403 - geometry, font, colours
 
 RA_APP_ID = "com.libretro.RetroArch"
@@ -69,6 +71,7 @@ class App(Screens):
         self.text_cache = {}
         self.sprite_cache = {}
         self.mem = None
+        self.actions = queue.Queue()  # right-stick steps from the stick thread
 
     def load_game(self):
         """Scans the ROM (slow on first run, cached afterwards) and starts polling."""
@@ -364,9 +367,12 @@ class App(Screens):
         return [(PAD + (i % 2) * (cw + PAD), TAB_H + PAD + (i // 2) * (ch + PAD), cw, ch) for i in range(6)]
 
     def draw_party(self, party):
+        sel = self.ui.get("party_sel") if self.ui.get("stick") else None
         for i, (x, y, w, h) in enumerate(self.card_rects()):
             if i < len(party):
                 self.draw_card(party[i], x, y, w, h)
+                if i == sel:  # the stick's cursor
+                    self.outline(x + 2, y + 2, w - 4, h - 4, INK, 2)
             else:
                 self.frame(x, y, w, h, fill=WIN_DIM, line=None)
 
@@ -468,6 +474,59 @@ class App(Screens):
 
     # ---------- input ----------
 
+    def push_action(self, action):
+        """From the stick thread: queue the step and wake the SDL loop."""
+        self.actions.put(action)
+        ev = (ctypes.c_uint8 * 56)()
+        struct.pack_into("<I", ev, 0, sdl.EV_USER)
+        sdl.PushEvent(ev)
+
+    def on_stick(self, action):
+        """Right stick: left/right switch tabs; up/down move through the current list."""
+        view = VIEWS[self.tab]
+        snap = self.mem.snapshot() if self.mem else {}
+        if action in ("left", "right"):
+            last = len(TABS) - 1
+            if view == "settings":
+                self.tab = last if action == "left" else 0
+            else:
+                self.tab = (self.tab + (1 if action == "right" else -1)) % len(TABS)
+            self.detail = None
+            if self.mem:
+                self.mem.view = VIEWS[self.tab]
+            return
+        step = 1 if action == "down" else -1 if action == "up" else 0
+        if view == "party":
+            party = snap.get("party") or []
+            if not party:
+                return
+            if self.detail is not None:
+                if action == "press":
+                    self.detail = None
+                else:
+                    moves = party[self.detail]["moves"]
+                    filled = [i for i, mv in enumerate(moves) if mv] or [0]
+                    cur = self.ui.get("move", 0)
+                    pos = filled.index(cur) if cur in filled else 0
+                    self.ui["move"] = filled[(pos + step) % len(filled)]
+            else:
+                sel = min(self.ui.get("party_sel", 0), len(party) - 1)
+                if action == "press":
+                    if self.ui.get("stick"):
+                        self.detail, self.ui["move"] = sel, 0
+                else:
+                    sel = (sel + step) % len(party) if self.ui.get("stick") else sel
+                self.ui["party_sel"] = sel
+                self.ui["stick"] = True
+        elif view == "bag":
+            self.bag_step(step, snap)
+        elif view == "map":
+            if action == "press":
+                self.ui["map_mode"] = "Wild" if self.ui.get("map_mode", "Map") == "Map" else "Map"
+            else:
+                self.wild_step(step, snap)
+
+
     def on_tap(self, x, y):
         if y < TAB_H:
             tw = (W - GEAR_W) // len(TABS)
@@ -495,6 +554,7 @@ class App(Screens):
         self.prepare_outputs()
         self.open_window()
         threading.Thread(target=self.place_window, daemon=True).start()
+        RightStick(self.push_action).start()
         self.draw()
         threading.Thread(target=self.load_game, daemon=True).start()
         ev = (ctypes.c_uint8 * 56)()
@@ -516,6 +576,9 @@ class App(Screens):
                         self.dirty.set()
                     if not sdl.PollEvent(ev):
                         break
+            while not self.actions.empty():
+                self.on_stick(self.actions.get_nowait())
+                self.dirty.set()
             if VIEWS[self.tab] == "map" and self.animating():
                 phase = int(time.monotonic() * 2)
                 if phase != getattr(self, "_phase", None):
