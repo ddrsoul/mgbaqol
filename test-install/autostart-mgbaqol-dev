@@ -1,0 +1,3 @@
+#!/bin/sh
+# mgba-qol test install (github.com/ddrsoul/mgbaqol). Undo: /storage/mgbaqol-dev/uninstall.sh
+[ -x /storage/mgbaqol-dev/install.sh ] && /storage/mgbaqol-dev/install.sh
