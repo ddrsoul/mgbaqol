@@ -343,17 +343,33 @@ class GameMemory(threading.Thread):
 
     def _find_pockets(self):
         addr = self._addr("bag_pockets")
+        found = None
         for n in (5, 6):
             if self._pockets_ok(self.read(addr, n * 8), n):
-                return addr, n
-        if not self._may_scan("bag"):
-            return None
-        ew = self.read(EWRAM, EWRAM_SIZE)
-        for n in (6, 5):
-            for o in range(0, EWRAM_SIZE - n * 8, 4):
-                if self._pockets_ok(ew[o:o + n * 8], n, strict=True):
-                    return EWRAM + o, n
-        return None
+                found = addr, n
+                break
+        if not found and self._may_scan("bag"):
+            ew = self.read(EWRAM, EWRAM_SIZE)
+            for n in (6, 5):
+                hit = next((o for o in range(0, EWRAM_SIZE - n * 8, 4)
+                            if self._pockets_ok(ew[o:o + n * 8], n, strict=True)), None)
+                if hit is not None:
+                    found = EWRAM + hit, n
+                    break
+        return self._widen_pockets(*found) if found else None
+
+    def _widen_pockets(self, addr, n, most=8):
+        """Grow a matched run of pockets to the whole array, both ways.
+
+        A match can start on the second pocket (Emerald Enhanced has 8 pockets,
+        Items first and often empty-looking), so extend while entries still
+        look like pockets.
+        """
+        while n < most and addr - 8 >= EWRAM and self._pockets_ok(self.read(addr - 8, (n + 1) * 8), n + 1):
+            addr, n = addr - 8, n + 1
+        while n < most and self._pockets_ok(self.read(addr, (n + 1) * 8), n + 1):
+            n += 1
+        return addr, n
 
     @staticmethod
     def _bag_key(pockets):
@@ -384,13 +400,39 @@ class GameMemory(threading.Thread):
         if not entries:
             return None
         slots = [self.read(ptr, cap * 4) for ptr, cap in entries]
-        names = SIX_POCKETS if n == 6 else self.engine["pockets"]
+        rom_names = self.rom.pocket_names()
+        named_by_rom = bool(rom_names) and len(rom_names) >= n
+        if named_by_rom:
+            names = rom_names[:n]
+        else:
+            names = SIX_POCKETS if n == 6 else self.engine["pockets"]
+            names = (names + ["Pocket %d" % (i + 1) for i in range(len(names), n)])[:n]
         pockets = []
         for name, raw in zip(names, slots):
             items = [struct.unpack_from("<HH", raw, i * 4) for i in range(len(raw) // 4)]
             pockets.append((name, [(item, qty) for item, qty in items if item]))
         key = self._bag_key(pockets)
-        return [(name, [(item, qty ^ key) for item, qty in items]) for name, items in pockets]
+        pockets = [(name, [(item, qty ^ key) for item, qty in items]) for name, items in pockets]
+        return pockets if named_by_rom else self._label_pockets(pockets)
+
+    def _label_pockets(self, pockets):
+        """Pocket order differs between engines and hacks; trust what's inside.
+
+        A pocket full of balls, TMs/HMs or berries is named after them, the
+        rest keep the engine order's names.
+        """
+        kinds = (("Pok\u00e9 Balls", lambda n: n.endswith("Ball")),
+                 ("TMs & HMs", lambda n: n[:2] in ("TM", "HM") and n[2:3].isdigit()),
+                 ("Berries", lambda n: n.endswith("Berry")))
+        names = [p[0] for p in pockets]
+        for i, (_, items) in enumerate(pockets):
+            item_names = [self.rom.item_name(item) for item, _ in items]
+            for label, test in kinds:
+                if item_names and all(test(n) for n in item_names) and label in names:
+                    j = names.index(label)
+                    names[i], names[j] = names[j], names[i]
+                    break
+        return [(names[i], items) for i, (_, items) in enumerate(pockets)]
 
     def _read_location(self):
         raw = self._read_map_header()

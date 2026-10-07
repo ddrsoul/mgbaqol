@@ -17,7 +17,7 @@ import zlib
 from gen3 import decode_text, encode_text
 
 CACHE_DIR = "/storage/.config/mgbaqol/cache"
-CACHE_VERSION = 9  # bump when table discovery changes
+CACHE_VERSION = 10  # bump when table discovery changes
 
 # Canonical type names keyed by the ROM's (upper-cased) spelling.
 TYPE_ALIASES = {"FIGHT": "Fighting", "ELECTR": "Electric", "PSYCHC": "Psychic", "???": "???"}
@@ -58,12 +58,31 @@ def lz77(rom, off):
     return bytes(out[:size])
 
 
+def _name_score(rom, base, stride, count=1500):
+    """How many of the first `count` records hold a real name (letters, no '?').
+
+    Hacks often leave the vanilla table in the ROM next to their expanded one;
+    the expanded one has far more real names past the vanilla end.
+    """
+    score = 0
+    for i in range(1, count):
+        off = base + i * stride
+        if off < 0 or off + 2 > len(rom):
+            break
+        name = decode_text(rom[off:off + min(stride, 24)])
+        if len(name) >= 2 and "?" not in name and any(c.isalpha() for c in name):
+            score += 1
+    return score
+
+
 def find_records(rom, anchor_sets, max_stride=0x200):
     """Locates a table of name records by known names at known indexes.
 
-    `anchor_sets` is a list of [(index, name), ...]; the first set that matches
-    wins. Returns (base, stride) where base is the record of index 0.
+    `anchor_sets` is a list of [(index, name), ...]. When several tables match
+    (a hack's expanded table and the vanilla one it replaced), the one with the
+    most real names wins. Returns (base, stride) where base is the record of index 0.
     """
+    found = set()
     for anchors in anchor_sets:
         (i0, n0), rest = anchors[0], anchors[1:]
         first = encode_text(n0) + b"\xFF"
@@ -72,9 +91,12 @@ def find_records(rom, anchor_sets, max_stride=0x200):
         while pos != -1:
             for stride in range(max(len(first), 4), max_stride):
                 if all(rom.startswith(enc, pos + d * stride) for d, enc in others):
-                    return pos - i0 * stride, stride
+                    found.add((pos - i0 * stride, stride))
+                    break
             pos = rom.find(first, pos + 1)
-    return None
+    if not found:
+        return None
+    return max(found, key=lambda bs: _name_score(rom, bs[0], bs[1]))
 
 
 def _anchors(*names_by_index, first=1):
@@ -166,6 +188,13 @@ def _text_at_ptr(rom, entry, limit=200):
     return decode_text(rom[p:p + limit])
 
 
+def _desc_run(rom, base):
+    n = 0
+    while base + (n + 2) * 4 <= len(rom) and _text_at_ptr(rom, base + (n + 1) * 4):
+        n += 1
+    return n
+
+
 def find_move_descriptions(rom):
     """Finds the move description pointer table (indexed by move id).
 
@@ -174,6 +203,7 @@ def find_move_descriptions(rom):
     so Tail Whip (move 39) is found by keywords and checked against Growl (45)
     and Ember (52).
     """
+    bases = set()
     for keyword in ("Defense", "DEFENSE"):
         enc = encode_text(keyword)
         seen = set()
@@ -193,10 +223,11 @@ def find_move_descriptions(rom):
                             growl = (_text_at_ptr(rom, base + 45 * 4) or "").lower()
                             ember = (_text_at_ptr(rom, base + 52 * 4) or "").lower()
                             if "attack" in growl and "burn" in ember:
-                                return base
+                                bases.add(base)
                         q = rom.find(ptr, q + 1)
             pos = rom.find(enc, pos + 1)
-    return None
+    # Unbound keeps the vanilla 354-entry table next to its expanded one.
+    return max(bases, key=lambda b: _desc_run(rom, b)) if bases else None
 
 
 def _short_text(rom, ptr, limit=24):
@@ -694,6 +725,44 @@ class RomData:
                 sections[FR_FIRST_MAPSEC + i] = (image_of[region_of(FR_FIRST_MAPSEC + i)],
                                                  (x + GRID_OFFSET) * 8, (y + GRID_OFFSET) * 8, w * 8, h * 8)
         return {"images": images, "sections": sections}
+
+    def pocket_names(self):
+        """The bag's pocket names in pocket order, from the ROM, or None.
+
+        Found as a run of string pointers that holds "Key Items" and a "...Balls"
+        entry and starts with "Items" (Emerald Enhanced: Items, Medicine,
+        Valuables, Poke Balls, TMs & HMs, Berries, Key Items, Mega Stones).
+        """
+        if "_pocket_names" not in self.__dict__:
+            self._pocket_names = self._find_pocket_names()
+        return self._pocket_names
+
+    def _find_pocket_names(self):
+        rom = self.rom
+        best = None
+        for word in ("Key Items", "KEY ITEMS"):
+            enc = encode_text(word) + b"\xFF"
+            pos = rom.find(enc)
+            while pos != -1:
+                ptr = struct.pack("<I", 0x08000000 + pos)
+                q = rom.find(ptr)
+                while q != -1:
+                    if q % 4 == 0:
+                        start = q
+                        while start >= 4 and _short_text(rom, struct.unpack_from("<I", rom, start - 4)[0]):
+                            start -= 4
+                        names = []
+                        while len(names) < 12:
+                            t = _short_text(rom, struct.unpack_from("<I", rom, start + len(names) * 4)[0])
+                            if not t:
+                                break
+                            names.append(t)
+                        if (names and "item" in names[0].lower() and any("ball" in n.lower() for n in names)
+                                and (best is None or len(names) > len(best))):
+                            best = names
+                    q = rom.find(ptr, q + 1)
+                pos = rom.find(enc, pos + 1)
+        return best
 
     def item_description(self, i):
         tbl = self.t.get("items")

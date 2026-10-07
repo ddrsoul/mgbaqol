@@ -146,7 +146,8 @@ class Screens:
             self.rect(cx + 2, y0 + 8, cw - 4, 30, PANEL if on else BAR_BG, radius=8)
             if on:
                 self.outline(cx + 2, y0 + 8, cw - 4, 30, ACCENT)
-            self.text(name, cx + cw // 2, y0 + 15, "small", TEXT if on else MUTED, "center")
+            font = "small" if self.text_width(name, "small") <= cw - 12 else "tiny"
+            self.text(name, cx + cw // 2, y0 + (15 if font == "small" else 17), font, TEXT if on else MUTED, "center")
         items = bag[sel][1]
         per_page = BAG_COLS * BAG_ROWS
         pages = max(1, (len(items) + per_page - 1) // per_page)
