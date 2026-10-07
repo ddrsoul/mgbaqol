@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""mgba-qol bottom-screen companion: live Gen 3 party view for RetroArch + mGBA.
+"""mgba-qol bottom-screen companion: live Gen 3 Pokemon data for RetroArch + mGBA.
 
   python3 main.py --rom "/storage/roms/gba/Emerald Enhanced [v11021].gba"
 """
@@ -22,8 +22,7 @@ from memory import GameMemory
 from ra import RetroArch
 from romdata import RomData
 from screens import Screens
-
-from theme import *  # noqa: F401,F403 - geometry, fonts, colours
+from theme import *  # noqa: F401,F403 - geometry, font, colours
 
 RA_APP_ID = "com.libretro.RetroArch"
 
@@ -53,12 +52,15 @@ def retroarch_running(pid):
     return False
 
 
+def dim(c, k=4):
+    return tuple(v // k for v in c)
+
+
 class App(Screens):
     def __init__(self, args):
         self.args = args
         self.game_name = os.path.splitext(os.path.basename(args.rom))[0]
         self.rom = None
-        self.supported = False
         self.tab = VIEWS.index(args.tab) if args.tab in VIEWS else 0
         self.detail = args.detail
         self.ui = {"map_mode": args.map_mode} if args.map_mode else {}  # per-screen state
@@ -75,7 +77,6 @@ class App(Screens):
         title, code = games.header(self.rom.rom)
         log("ROM %s (%s, crc %s), profile %s" % (title, code, self.rom.crc, prof and prof[0]))
         log("tables: %s" % self.rom.t)
-        self.supported = True  # unknown games are searched for in RAM
         self.mem = GameMemory(RetroArch(port=self.args.port), self.rom, prof, self.dirty.set)
         self.mem.view = VIEWS[self.tab]
         self.mem.start()
@@ -91,20 +92,18 @@ class App(Screens):
         sdl.SetHint(b"SDL_RENDER_SCALE_QUALITY", b"nearest")
         if sdl.Init(sdl.INIT_VIDEO) != 0 or sdl.TTF_Init() != 0:
             raise RuntimeError("SDL init: %s" % sdl.error())
-        self.win = sdl.CreateWindow(b"mgba-qol", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, W, H,
-                                    sdl.WINDOW_SHOWN | sdl.WINDOW_RESIZABLE)
+        self.win = sdl.CreateWindow(b"mgba-qol", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+                                    SCREEN_W, SCREEN_H, sdl.WINDOW_SHOWN | sdl.WINDOW_RESIZABLE)
         self.ren = sdl.CreateRenderer(self.win, -1, sdl.RENDERER_ACCELERATED | sdl.RENDERER_PRESENTVSYNC)
         if not self.win or not self.ren:
             raise RuntimeError("SDL window: %s" % sdl.error())
+        # Lay out on 320x240 and let SDL double it with hard pixel edges.
+        sdl.RenderSetLogicalSize(self.ren, W, H)
+        sdl.RenderSetIntegerScale(self.ren, 1)
         sdl.SetRenderDrawBlendMode(self.ren, sdl.BLENDMODE_BLEND)
-        self.fonts = {}
-        for key, path, size in (("title", FONT_BOLD, 17), ("body", FONT_REGULAR, 15),
-                                ("small", FONT_REGULAR, 13), ("tiny", FONT_BOLD, 11),
-                                ("big", FONT_BOLD, 24), ("tab", FONT_REGULAR, 15)):
-            font = sdl.TTF_OpenFont(path.encode(), size)
-            if not font:
-                raise RuntimeError("font %s: %s" % (path, sdl.error()))
-            self.fonts[key] = font
+        self.font = sdl.TTF_OpenFont(FONT.encode(), FONT_SIZE)
+        if not self.font:
+            raise RuntimeError("font %s: %s" % (FONT, sdl.error()))
 
     def prepare_outputs(self):
         """Gets sway ready before our window exists, so it never lands next to the game.
@@ -140,34 +139,48 @@ class App(Screens):
             time.sleep(delay)
             swaymsg('[app_id="%s"] focus' % RA_APP_ID)
 
-    # ---------- drawing helpers ----------
+    # ---------- drawing primitives (canvas units: 320x240) ----------
 
     def color(self, c, a=255):
         sdl.SetRenderDrawColor(self.ren, c[0], c[1], c[2], a)
 
-    def rect(self, x, y, w, h, c, a=255, radius=0):
-        if w <= 0 or h <= 0:
-            return
-        if radius and sdl.roundedBoxRGBA:
-            sdl.roundedBoxRGBA(self.ren, x, y, x + w - 1, y + h - 1, radius, c[0], c[1], c[2], a)
-        else:
+    def rect(self, x, y, w, h, c, a=255):
+        if w > 0 and h > 0:
             self.color(c, a)
             sdl.RenderFillRect(self.ren, ctypes.byref(sdl.Rect(int(x), int(y), int(w), int(h))))
 
-    def outline(self, x, y, w, h, c, radius=8):
-        if sdl.roundedRectangleRGBA:
-            sdl.roundedRectangleRGBA(self.ren, x, y, x + w - 1, y + h - 1, radius, c[0], c[1], c[2], 255)
+    def box(self, x, y, w, h, c, a=255, radius=2):
+        """Filled rectangle with clipped corners."""
+        if w <= 0 or h <= 0:
+            return
+        if sdl.roundedBoxRGBA:
+            sdl.roundedBoxRGBA(self.ren, x, y, x + w - 1, y + h - 1, radius, c[0], c[1], c[2], a)
+        else:
+            self.rect(x, y, w, h, c, a)
 
-    def text_tex(self, text, font, c):
-        key = (text, font, c)
+    def frame(self, x, y, w, h, fill=WIN, line=LINE, ink=INK):
+        """A Gen 3 text window: dark outer border, light inner line."""
+        self.box(x, y, w, h, ink, radius=3)
+        self.box(x + 2, y + 2, w - 4, h - 4, fill, radius=2)
+        if line and sdl.roundedRectangleRGBA:
+            sdl.roundedRectangleRGBA(self.ren, x + 3, y + 3, x + w - 4, y + h - 4, 1, line[0], line[1], line[2], 255)
+
+    def outline(self, x, y, w, h, c, thick=1):
+        for k in range(thick):
+            for rx, ry, rw, rh in ((x + k, y + k, w - 2 * k, 1), (x + k, y + h - 1 - k, w - 2 * k, 1),
+                                   (x + k, y + k, 1, h - 2 * k), (x + w - 1 - k, y + k, 1, h - 2 * k)):
+                self.rect(rx, ry, rw, rh, c)
+
+    def text_tex(self, s, c):
+        key = (s, c)
         hit = self.text_cache.get(key)
         if hit:
             return hit
-        if len(self.text_cache) > 400:
+        if len(self.text_cache) > 600:
             for tex, _, _ in self.text_cache.values():
                 sdl.DestroyTexture(tex)
             self.text_cache.clear()
-        surf = sdl.TTF_RenderUTF8_Blended(self.fonts[font], text.encode("utf-8"), sdl.Color(*c, 255))
+        surf = sdl.TTF_RenderUTF8_Solid(self.font, s.encode("utf-8"), sdl.Color(*c, 255))
         if not surf:
             return None
         w, h = surf.contents.w, surf.contents.h
@@ -176,10 +189,11 @@ class App(Screens):
         self.text_cache[key] = (tex, w, h)
         return self.text_cache[key]
 
-    def text(self, s, x, y, font="body", c=TEXT, align="left", alpha=255):
+    def text(self, s, x, y, c=INK, shadow=SHADOW, align="left", alpha=255):
+        """Pixel text with the Gen 3 one-pixel drop shadow. Returns its width."""
         if not s:
             return 0
-        hit = self.text_tex(s, font, c)
+        hit = self.text_tex(s, c)
         if not hit:
             return 0
         tex, w, h = hit
@@ -187,25 +201,80 @@ class App(Screens):
             x -= w
         elif align == "center":
             x -= w // 2
+        if shadow:
+            st = self.text_tex(s, shadow)
+            if st:
+                sdl.SetTextureAlphaMod(st[0], alpha)
+                sdl.RenderCopy(self.ren, st[0], None, ctypes.byref(sdl.Rect(int(x) + 1, int(y) + 1, w, h)))
         sdl.SetTextureAlphaMod(tex, alpha)
         sdl.RenderCopy(self.ren, tex, None, ctypes.byref(sdl.Rect(int(x), int(y), w, h)))
         return w
 
-    def pill(self, label, x, y, bg, fg=(16, 19, 26), alpha=255):
-        tex = self.text_tex(label, "tiny", fg)
-        w = (tex[1] if tex else 20) + 12
-        self.rect(x, y, w, 17, bg, alpha, radius=8)
-        self.text(label, x + 6, y + 2, "tiny", fg, alpha=alpha)
+    def arrow(self, x, y, d, c):
+        """A 4x7 pixel triangle pointing r/l/u/d (the font has no arrow glyphs)."""
+        for i in range(4):
+            n = 7 - 2 * i
+            if d == "r":
+                self.rect(x + i, y + i, 1, n, c)
+            elif d == "l":
+                self.rect(x + 3 - i, y + i, 1, n, c)
+            elif d == "d":
+                self.rect(x + i, y + i, n, 1, c)
+            else:
+                self.rect(x + i, y + 3 - i, n, 1, c)
+
+    def text_width(self, s):
+        w, h = ctypes.c_int(), ctypes.c_int()
+        sdl.TTF_SizeUTF8(self.font, s.encode("utf-8"), ctypes.byref(w), ctypes.byref(h))
+        return w.value
+
+    def fit(self, s, width):
+        """s, cut with an ellipsis to fit width."""
+        if self.text_width(s) <= width:
+            return s
+        while s and self.text_width(s + "...") > width:
+            s = s[:-1]
+        return s + "..."
+
+    def wrap(self, s, width, max_lines):
+        """Greedy word wrap measured with the real font; ellipsis if it overflows."""
+        lines, cur = [], ""
+        for word in s.split():
+            trial = (cur + " " + word).strip()
+            if self.text_width(trial) <= width or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = word
+        if cur:
+            lines.append(cur)
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            lines[-1] = self.fit(lines[-1] + " ...", width)
+        return lines
+
+    def pill(self, label, x, y, bg, alpha=255):
+        """A type / status plate: white text with an ink shadow. Returns its width."""
+        label = label.upper()
+        w = self.text_width(label) + 6
+        self.box(x, y, w, 13, bg, alpha, radius=2)
+        self.text(label, x + 3, y - 2, WHITE, INK, alpha=alpha)
         return w
 
-    def hp_bar(self, x, y, w, hp, max_hp, h=8, alpha=255):
-        self.rect(x, y, w, h, LINE, alpha, radius=h // 2)
+    def hp_bar(self, x, y, w, hp, max_hp, alpha=255):
+        """'HP' tag plus the bar, Gen 3 style; w covers both."""
+        self.box(x, y, 17, 9, INK, alpha, radius=1)
+        self.text("HP", x + 2, y - 4, YELLOW, None, alpha=alpha)
+        bx, bw = x + 18, w - 18
+        self.rect(bx, y, bw, 9, INK, alpha)
+        self.rect(bx + 1, y + 1, bw - 2, 7, HP_BG, alpha)
         frac = hp / max_hp if max_hp else 0
-        c = GREEN if frac > 0.5 else YELLOW if frac > 0.2 else RED
         if hp > 0:
-            self.rect(x, y, max(h, int(w * frac)), h, c, alpha, radius=h // 2)
+            c = GREEN if frac > 0.5 else YELLOW if frac > 0.2 else RED
+            self.rect(bx + 1, y + 2, max(1, int((bw - 2) * frac)), 5, c, alpha)
 
-    def sprite(self, species, x, y, scale=1, alpha=255):
+    def sprite(self, species, x, y, size=32, alpha=255):
+        """Front sprite in a size x size canvas box; 32 = native resolution on screen."""
         if species not in self.sprite_cache:
             rgba = self.rom.sprite_rgba(species)
             tex = None
@@ -218,10 +287,28 @@ class App(Screens):
         tex = self.sprite_cache[species]
         if tex:
             sdl.SetTextureAlphaMod(tex, alpha)
-            sdl.RenderCopy(self.ren, tex, None, ctypes.byref(sdl.Rect(x, y, 64 * scale, 64 * scale)))
+            sdl.RenderCopy(self.ren, tex, None, ctypes.byref(sdl.Rect(int(x), int(y), size, size)))
         else:
-            name = self.rom.species_name(species)
-            self.text(name[:1], x + 32 * scale, y + 20 * scale, "big", MUTED, "center", alpha)
+            self.text(self.rom.species_name(species)[:1], x + size // 2, y + size // 2 - 8, MUTED, None, "center")
+
+    def sprite_box(self, species, types, x, y, size=32, alpha=255):
+        tint = TYPE_COLORS.get(types[0], MUTED) if types else MUTED
+        self.box(x, y, size + 4, size + 4, tuple((v + 2 * w) // 3 for v, w in zip(tint, WIN)), alpha, radius=2)
+        self.sprite(species, x + 2, y + 2, size, alpha)
+
+    def chip(self, label, x, y, w, h, on):
+        """A small selectable window (tabs, pocket and mode switches)."""
+        self.box(x, y, w, h, INK, radius=2)
+        self.box(x + 1, y + 1, w - 2, h - 2, WIN if on else WIN_DIM, radius=2)
+        self.text(self.fit(label, w - 4), x + w // 2, y + (h - 16) // 2, INK if on else MUTED,
+                  SHADOW if on else None, "center")
+
+    def message(self, s, y0=TAB_H, h=H - TAB_H):
+        """A one-line text window in the middle of the body."""
+        w = min(W - 2 * PAD, self.text_width(s) + 24)
+        x, y = (W - w) // 2, y0 + (h - 26) // 2
+        self.frame(x, y, w, 26)
+        self.text(s, W // 2, y + 5, align="center")
 
     # ---------- screens ----------
 
@@ -230,191 +317,154 @@ class App(Screens):
         sdl.RenderClear(self.ren)
         snap = self.mem.snapshot() if self.mem else {"connected": False, "party": []}
         connected, party = snap["connected"], snap.get("party") or []
-        self.draw_tabs()
-        body_y, body_h = TAB_H, H - TAB_H - FOOT_H
+        self.draw_tabs(connected)
         view = VIEWS[self.tab]
         if self.rom is None:
-            self.message("Loading game data…", body_y, body_h)
+            self.message("Loading game data...")
         elif view == "settings":
-            self.draw_settings(snap, body_y, body_h)
+            self.draw_settings(snap)
         elif not connected:
-            self.message("Waiting for the game…", body_y, body_h)
+            self.message("Waiting for the game...")
         elif view == "battle":
-            self.draw_battle(snap, body_y, body_h)
+            self.draw_battle(snap)
         elif view == "bag":
-            self.draw_bag(snap, body_y, body_h)
+            self.draw_bag(snap)
         elif view == "map":
-            self.draw_map(snap, body_y, body_h)
+            self.draw_map(snap)
         elif not party:
-            self.message("No Pokémon in your party yet", body_y, body_h)
+            self.message("No Pokémon in your party yet")
         elif self.detail is not None and self.detail < len(party):
-            self.draw_detail(party[self.detail], body_y, body_h)
+            self.draw_detail(party[self.detail])
         else:
             self.detail = None
-            self.draw_party(party, body_y, body_h)
-        self.draw_footer(connected)
+            self.draw_party(party)
         sdl.RenderPresent(self.ren)
 
-    def message(self, s, y, h):
-        self.text(s, W // 2, y + h // 2 - 10, "body", MUTED, "center")
-
-    def draw_tabs(self):
-        self.rect(0, 0, W, TAB_H, BAR_BG)
+    def draw_tabs(self, connected):
+        self.rect(0, 0, W, TAB_H, BAR)
+        self.rect(0, TAB_H - 2, W, 2, INK)
         tw = (W - GEAR_W) // len(TABS)
         for i, name in enumerate(TABS + [None]):
             x, w = (i * tw, tw) if i < len(TABS) else (W - GEAR_W, GEAR_W)
-            if i == self.tab:
-                self.rect(x, 0, w, TAB_H, PANEL)
-                self.rect(x, TAB_H - 3, w, 3, ACCENT)
-            c = TEXT if i == self.tab else MUTED
+            on = i == self.tab
+            if on:
+                self.rect(x, 0, w, TAB_H, INK)
+                self.rect(x + 1, 0, w - 2, TAB_H, WIN)
+            c, sh = (INK, SHADOW) if on else (TAB_TEXT, TAB_SHADOW)
             if name:
-                self.text(name, x + w // 2, 10, "tab", c, "center")
-            else:  # settings: a three-bar menu icon
+                self.text(name.upper(), x + w // 2, 2, c, sh, "center")
+            else:  # settings: three bars; a red dot over them when RetroArch isn't answering
                 for k in range(3):
-                    self.rect(x + w // 2 - 10, 12 + k * 7, 20, 3, c, radius=1)
-        self.rect(0, TAB_H - 1, W, 1, LINE)
+                    self.rect(x + w // 2 - 6, 6 + k * 4, 12, 2, c)
+                if self.rom is not None and not connected:
+                    self.rect(x + w - 6, 3, 3, 3, RED)
 
-    def draw_footer(self, connected):
-        y = H - FOOT_H
-        self.rect(0, y, W, FOOT_H, BAR_BG)
-        self.rect(0, y, W, 1, LINE)
-        in_detail = self.tab == 0 and self.detail is not None
-        self.text("Tap anywhere to go back" if in_detail else self.game_name, 12, y + 7, "small", MUTED)
-        if connected:
-            self.text("Live", W - 12, y + 7, "small", MUTED, "right")
-            self.text("●", W - 46, y + 6, "small", GREEN, "right")
-        else:
-            self.text("Not connected", W - 12, y + 7, "small", MUTED, "right")
+    def card_rects(self):
+        cw, ch = (W - 3 * PAD) // 2, (H - TAB_H - 4 * PAD) // 3
+        return [(PAD + (i % 2) * (cw + PAD), TAB_H + PAD + (i // 2) * (ch + PAD), cw, ch) for i in range(6)]
 
-    def card_rects(self, y0, h):
-        cw = (W - PAD * 3) // 2
-        ch = (h - PAD * 4) // 3
-        return [(PAD + (i % 2) * (cw + PAD), y0 + PAD + (i // 2) * (ch + PAD), cw, ch) for i in range(6)]
-
-    def draw_party(self, party, y0, h):
-        rects = self.card_rects(y0, h)
-        for i, (x, y, w, ch) in enumerate(rects):
-            if i >= len(party):
-                self.outline(x, y, w, ch, LINE)
-                continue
-            self.draw_card(party[i], x, y, w, ch)
+    def draw_party(self, party):
+        for i, (x, y, w, h) in enumerate(self.card_rects()):
+            if i < len(party):
+                self.draw_card(party[i], x, y, w, h)
+            else:
+                self.frame(x, y, w, h, fill=WIN_DIM, line=None)
 
     def draw_card(self, m, x, y, w, h):
         fainted = m["hp"] == 0
-        a = 130 if fainted else 255
-        self.rect(x, y, w, h, PANEL, radius=8)
+        a = 140 if fainted else 255
+        self.frame(x, y, w, h)
         types = self.rom.species_types(m["species"])
-        tint = TYPE_COLORS.get(types[0], MUTED) if types else MUTED
-        box = 76
-        bx, by = x + 8, y + (h - box) // 2
-        self.rect(bx, by, box, box, tuple(v // 4 for v in tint), a, radius=8)
-        self.sprite(m["species"], bx + 6, by + 6, alpha=a)
-        tx, tr = bx + box + 10, x + w - 10
+        self.sprite_box(m["species"], types, x + 5, y + (h - 36) // 2, alpha=a)
+        tx, tr = x + 46, x + w - 7
         species = self.rom.species_name(m["species"])
-        name = m["nick"] or species
-        self.text(name, tx, y + 8, "title", TEXT, alpha=a)
-        self.text("Lv %d" % m["level"], tr, y + 10, "small", MUTED, "right", a)
+        lv = "Lv%d" % m["level"]
+        self.text(lv, tr, y + 3, alpha=a, align="right")
+        self.text(self.fit(m["nick"] or species, tr - tx - self.text_width(lv) - 4), tx, y + 3, alpha=a)
         px = tx
         for t in types:
-            px += self.pill(t, px, y + 33, TYPE_COLORS.get(t, MUTED), alpha=a) + 4
+            px += self.pill(t, px, y + 23, TYPE_COLORS.get(t, MUTED), a) + 2
         st = gen3.status_name(m["status"])
         if st:
-            self.pill(st, px, y + 33, STATUS_COLORS.get(st, MUTED), alpha=a)
+            self.pill(st, px, y + 23, STATUS_COLORS.get(st, MUTED), a)
+        self.hp_bar(tx, y + 41, tr - tx, m["hp"], m["max_hp"], a)
+        self.text("FNT" if fainted else "%d/%d" % (m["hp"], m["max_hp"]), tr, y + 48,
+                  RED if fainted else INK, align="right")
         if m["shiny"]:
-            self.text("★", tr, y + 31, "body", YELLOW, "right", a)
-        self.hp_bar(tx, y + 58, tr - tx, m["hp"], m["max_hp"], alpha=a)
-        hp_text = "%d / %d" % (m["hp"], m["max_hp"]) + ("  fainted" if fainted else "")
-        self.text(hp_text, tx, y + 70, "small", RED if fainted else MUTED)
-        self.text(self.rom.item_name(m["item"]), tr, y + 70, "small", MUTED, "right", a)
-        if name.upper() != species.upper():
-            self.text(species, tx, y + 88, "small", MUTED, alpha=a)
+            self.text("Shiny", tx, y + 48, YELLOW, INK, alpha=a)
 
-    def draw_detail(self, m, y0, h):
-        x, y, w = PAD, y0 + PAD, W - PAD * 2
-        self.rect(x, y, w, h - PAD * 2, PANEL, radius=10)
+    def draw_detail(self, m):
+        """Like the game's Summary screen: the Pokemon, its moves, the chosen move's text."""
+        x, w = PAD, W - 2 * PAD
+        y = TAB_H + PAD
+        self.frame(x, y, w, 78)
         types = self.rom.species_types(m["species"])
-        tint = TYPE_COLORS.get(types[0], MUTED) if types else MUTED
-        self.rect(x + 12, y + 12, 140, 140, tuple(v // 4 for v in tint), radius=10)
-        self.sprite(m["species"], x + 18, y + 18, scale=2)
-        tx = x + 168
+        self.sprite_box(m["species"], types, x + 5, y + 5, size=64)
+        tx, tr = x + 76, x + w - 7
         species = self.rom.species_name(m["species"])
         name = m["nick"] or species
-        self.text(name, tx, y + 12, "big")
-        self.text("Lv %d" % m["level"], x + w - 14, y + 18, "body", MUTED, "right")
+        lv = "Lv%d" % m["level"]
+        self.text(lv, tr, y + 3, align="right")
         sub = species if name.upper() != species.upper() else ""
-        if m["shiny"]:
-            sub = (sub + "  ★ shiny").strip()
-        self.text(sub, tx, y + 44, "small", MUTED)
+        self.text(self.fit(name + ("  /" + sub if sub else ""), tr - tx - 40), tx, y + 3)
         px = tx
         for t in types:
-            px += self.pill(t, px, y + 66, TYPE_COLORS.get(t, MUTED)) + 4
+            px += self.pill(t, px, y + 22, TYPE_COLORS.get(t, MUTED)) + 2
         st = gen3.status_name(m["status"])
         if st:
-            self.pill(st, px, y + 66, STATUS_COLORS.get(st, MUTED))
-        self.hp_bar(tx, y + 94, x + w - 14 - tx, m["hp"], m["max_hp"], h=10)
-        self.text("HP %d / %d" % (m["hp"], m["max_hp"]), tx, y + 108, "small", MUTED)
+            px += self.pill(st, px, y + 22, STATUS_COLORS.get(st, MUTED)) + 2
+        if m["shiny"]:
+            self.pill("Shiny", px, y + 22, YELLOW)
         item = self.rom.item_name(m["item"])
         if item:
-            self.text("Holds " + item, x + w - 14, y + 108, "small", MUTED, "right")
+            self.text(self.fit(item, 90), tr, y + 20, MUTED, None, "right")
+        self.hp_bar(tx, y + 41, tr - tx - 52, m["hp"], m["max_hp"])
+        self.text("%d/%d" % (m["hp"], m["max_hp"]), tr, y + 37, align="right")
         sx = tx
-        for k, v in m["stats"].items():
-            self.text(k, sx, y + 132, "small", MUTED)
-            self.text(str(v), sx + 34, y + 132, "small", TEXT)
-            sx += 82
-        my, mh = y + 160, 108
-        mw = (w - 36) // 2
+        for k in ("Atk", "Def", "SpA", "SpD", "Spe"):
+            sx += self.text(k, sx, y + 56, MUTED, None) + 2
+            sx += self.text(str(m["stats"][k]), sx, y + 56) + 6
+
+        # Moves list.
+        y += 82
+        rows = 4
+        self.frame(x, y, w, rows * 16 + 8)
+        sel = min(self.ui.get("move", 0), 3)
         for i, move in enumerate(m["moves"]):
-            mx, mrow = x + 12 + (i % 2) * (mw + 12), my + (i // 2) * (mh + 8)
+            ry = y + 4 + i * 16
             if not move:
-                self.outline(mx, mrow, mw, mh, LINE)
+                self.text("-", x + 12, ry, MUTED, None)
                 continue
-            self.rect(mx, mrow, mw, mh, BAR_BG, radius=8)
-            self.text(self.rom.move_name(move), mx + 10, mrow + 7, "title")
+            if i == sel:
+                self.rect(x + 4, ry, w - 8, 16, WIN_DIM)
+                self.arrow(x + 7, ry + 5, "r", INK)
             info = self.rom.move_info(move)
+            self.text(self.fit(self.rom.move_name(move), 130), x + 16, ry)
             if info:
-                mtype = info["type"]
-                self.pill(mtype, mx + mw - 10 - (self.text_tex(mtype, "tiny", (16, 19, 26))[1] + 12),
-                          mrow + 8, TYPE_COLORS.get(mtype, MUTED))
-                parts = ["PP %d/%d" % (m["pp"][i], info["pp"])]
-                power = info["power"]
-                parts.append("Power %d" % power if power > 1 else "Power varies" if power == 1 else "Status")
+                self.pill(info["type"], x + 152, ry + 2, TYPE_COLORS.get(info["type"], MUTED))
+                self.text("PP %d/%d" % (m["pp"][i], info["pp"]), tr, ry, align="right")
+        self._move_rows = (y + 4, 16)
+
+        # The chosen move.
+        y += rows * 16 + 12
+        hgt = H - PAD - y
+        self.frame(x, y, w, hgt)
+        move = m["moves"][sel] if sel < len(m["moves"]) else 0
+        if move:
+            info = self.rom.move_info(move)
+            parts = []
+            if info:
+                p = info["power"]
+                parts.append("Power %d" % p if p > 1 else "Power varies" if p == 1 else "Status")
                 if info["acc"]:
                     parts.append("Acc %d" % info["acc"])
                 if 0 < info["chance"] < 100:
                     parts.append("Effect %d%%" % info["chance"])
                 if info["priority"]:
                     parts.append("Priority %+d" % info["priority"])
-                detail = "  ·  ".join(parts)
-            else:
-                detail = "PP %d" % m["pp"][i]
-            self.text(detail, mx + 10, mrow + 31, "small", MUTED)
-            for n, line in enumerate(self.wrap(self.rom.move_description(move), "small", mw - 20, 3)):
-                self.text(line, mx + 10, mrow + 53 + n * 17, "small", TEXT)
-
-    def wrap(self, s, font, width, max_lines):
-        """Greedy word wrap measured with the real font; ellipsis if it overflows."""
-        lines, cur = [], ""
-        for word in s.split():
-            trial = (cur + " " + word).strip()
-            if self.text_width(trial, font) <= width or not cur:
-                cur = trial
-            else:
-                lines.append(cur)
-                cur = word
-        if cur:
-            lines.append(cur)
-        if len(lines) > max_lines:
-            lines = lines[:max_lines]
-            last = lines[-1]
-            while last and self.text_width(last + "…", font) > width:
-                last = last[:-1]
-            lines[-1] = last.rstrip() + "…"
-        return lines
-
-    def text_width(self, s, font):
-        w, h = ctypes.c_int(), ctypes.c_int()
-        sdl.TTF_SizeUTF8(self.fonts[font], s.encode("utf-8"), ctypes.byref(w), ctypes.byref(h))
-        return w.value
+            self.text("  ".join(parts), x + 8, y + 3, MUTED, None)
+            for n, line in enumerate(self.wrap(self.rom.move_description(move), w - 16, (hgt - 22) // 15)):
+                self.text(line, x + 8, y + 18 + n * 15)
 
     # ---------- input ----------
 
@@ -427,11 +477,16 @@ class App(Screens):
                 self.mem.view = VIEWS[self.tab]
         elif VIEWS[self.tab] == "party":
             if self.detail is not None:
-                self.detail = None
+                top, row = getattr(self, "_move_rows", (0, 0))
+                if row and top <= y < top + 4 * row:
+                    self.ui["move"] = (y - top) // row
+                else:
+                    self.detail = None
             else:
-                for i, (cx, cy, cw, ch) in enumerate(self.card_rects(TAB_H, H - TAB_H - FOOT_H)):
+                for i, (cx, cy, cw, ch) in enumerate(self.card_rects()):
                     if cx <= x < cx + cw and cy <= y < cy + ch:
                         self.detail = i
+                        self.ui["move"] = 0
         else:
             self.on_screen_tap(VIEWS[self.tab], x, y)
         self.dirty.set()
@@ -455,6 +510,7 @@ class App(Screens):
                         fx, fy = struct.unpack_from("<ff", raw, 24)
                         self.on_tap(int(fx * W), int(fy * H))
                     elif t == sdl.EV_MOUSEUP and struct.unpack_from("<I", raw, 12)[0] != sdl.TOUCH_MOUSEID:
+                        # Mouse coordinates already come in canvas units (logical size).
                         self.on_tap(*struct.unpack_from("<ii", raw, 20))
                     elif t == sdl.EV_WINDOW:
                         self.dirty.set()
@@ -489,6 +545,7 @@ def main():
     ap.add_argument("--tab", choices=VIEWS, help="start on this tab, for testing")
     ap.add_argument("--debug-mapsec", type=int, help="pretend to be in this map section when the game says nothing")
     ap.add_argument("--map-mode", choices=("Map", "Wild"), help="start the Map tab in this mode, for testing")
+    ap.add_argument("--debug-battle", action="store_true", help="fake a battle from the party, for testing")
     args = ap.parse_args()
 
     app = App(args)
