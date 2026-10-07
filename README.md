@@ -57,20 +57,20 @@ same as with the regular `mgba` core, and saves are shared with it.
 
 ## Tabs
 
-- **Party**: six cards with sprite, types, level, HP, status and held item.
-  Tap a card for stats and the four moves with type, PP, power, accuracy,
-  effect chance, priority and the game's own move description. Tap again to
-  go back.
+- **Party**: six windows with sprite, types, level, HP and status. Tap one
+  for a Summary-style page: stats, held item and the four moves; tap a move
+  for its power, accuracy, effect chance, priority and the game's own
+  description. Tap the top window to go back.
 - **Battle**: the opponent's sprite, types, HP, status and stat stages; your
   active Pokémon; your moves with their effectiveness against the opponent
   (no effect / not very / normal / super), STAB, and the best damaging move
   marked *Best*. Uses the Gen 6+ type chart; abilities such as Levitate are
   not taken into account.
-- **Bag**: every pocket the game has, items with quantities, pages for long
-  pockets. Tap an item for its description.
+- **Bag**: every pocket the game has, switched with the arrows like in the
+  games, items with quantities. Tap an item for its description.
 - **Map**: the location name; *Map* shows the game's own region map with
   your location highlighted, *Wild* the wild Pokémon of the current map with
-  levels and odds per method (grass, surfing, rock smash, fishing by rod).
+  levels and odds per method (grass, surfing, rock smash, and each rod).
 - **Settings** (menu icon at the right of the tab bar): see below.
 
 ## Supported games
@@ -119,6 +119,13 @@ of the Map tab still works.
   remembered for this ROM; it searches again as needed.
 - **Found in RAM**: what has been located so far, plus the ROM's title, game
   code and CRC.
+
+## Look
+
+Made to sit next to the game: everything is laid out on a 320x240 canvas
+that SDL doubles without smoothing, in Gen 3 style text windows on a
+grey-blue background, with a pixel font and the games' type plates and HP
+bars. Pokémon sprites are drawn at their native resolution.
 
 ## How it works
 
@@ -201,7 +208,9 @@ pokeemerald-expansion builds) need code changes.
 
 ## License and credits
 
-GPL-2.0-or-later, see `LICENSE`.
+GPL-2.0-or-later, see `LICENSE`. The bundled
+[Pixel Operator](https://notabug.org/HarvettFox96/ttf-pixeloperator) font by
+Jayvee Enaguas is CC0 (public domain).
 
 Inspired by [PokeDaisy](https://github.com/lidor30/pokedaisy) by Lidor
 Itzhari, a dual-screen Pokémon companion for Android, whose notes on Gen 3
