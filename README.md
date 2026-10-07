@@ -73,6 +73,19 @@ same as with the regular `mgba` core, and saves are shared with it.
   levels and odds per method (grass, surfing, rock smash, and each rod).
 - **Settings** (menu icon at the right of the tab bar): see below.
 
+## Controls
+
+Touch everything, or use the gamepad's right stick, which GBA games don't
+use (the companion reads it alongside RetroArch without taking it away
+from the game):
+
+- **left / right**: previous / next tab;
+- **up / down**: move through the current list: party, a Pokémon's moves
+  (each one's description shows below), the bag's items, Wild's methods;
+- **press (R3)**: open / close a Pokémon's details; switch Map / Wild.
+
+Holding a direction repeats after 0.8 s, then every 0.25 s.
+
 ## Supported games
 
 Games on the FireRed and Emerald engines, including ROM hacks. The companion
@@ -161,6 +174,7 @@ EmulationStation ──> runemu.sh --core=mgbaqol
 | `companion/gen3.py` | Gen 3 text encoding and Pokémon data decoding |
 | `companion/games.py` | known party addresses (speeds up the first run) |
 | `companion/typechart.py` | type effectiveness |
+| `companion/stick.py` | right-stick navigation (evdev) |
 | `companion/ra.py`, `sdl.py`, `theme.py` | RetroArch client, SDL2 bindings, colours |
 | `rocknix/` | `start_mgbaqol.sh` (started by `runemu.sh`) and the core's `.info` |
 | `test-install/` | install / uninstall without a firmware rebuild |
