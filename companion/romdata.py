@@ -421,6 +421,10 @@ class RomData:
         off = base + index * stride
         if index < 0 or off < 0 or off + length > len(self.rom):
             return None
+        if self.rom[off + 3] in (0x08, 0x09):
+            # CFRU hacks (Unbound) put a pointer to names too long for the
+            # field in its first four bytes; 0x08 is no printable character.
+            return _text_at_ptr(self.rom, off, 40)
         return decode_text(self.rom[off:off + length])
 
     def species_name(self, i):

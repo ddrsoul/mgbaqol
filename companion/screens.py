@@ -183,13 +183,12 @@ class Screens:
                 self.arrow(x + 7, ry + 5, "r", INK)
             self.text(self.fit(self.rom.item_name(item), w - 70), x + 16, ry)
             if "key" not in name.lower() or qty > 1:
-                self.text("×%d" % qty, x + w - 10, ry, align="right")
-        if pages > 1:
-            if page:
-                self.arrow(x + w - 16, y + 8, "u", MUTED)
-            self.text("%d/%d" % (page + 1, pages), x + w - 22, y + lh - 20, MUTED, None, "right")
-            if page < pages - 1:
-                self.arrow(x + w - 16, y + lh - 14, "d", MUTED)
+                self.text("×%d" % qty, x + w - 18, ry, align="right")
+        # More items above / below: arrows in their own column at the right.
+        if page:
+            self.arrow(x + w - 14, y + 10, "u", INK)
+        if page < pages - 1:
+            self.arrow(x + w - 14, y + lh - 14, "d", INK)
         self._bag_list = (y + 4, per_page, page, pages)
 
         # What the chosen item does.
@@ -214,7 +213,7 @@ class Screens:
             return
         list_top, per_page, page, pages = getattr(self, "_bag_list", (0, BAG_ROWS, 0, 1))
         if list_top <= y < list_top + per_page * 16:
-            if x > W - 60 and pages > 1:  # the page column at the right
+            if x >= W - PAD - 22 and pages > 1:  # the arrow column at the right
                 self.ui["page"] = (page + 1) % pages if y >= list_top + per_page * 8 else max(0, page - 1)
                 return
             k = page * per_page + (y - list_top) // 16
