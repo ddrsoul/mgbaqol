@@ -272,8 +272,7 @@ pokeemerald-expansion builds) need code changes.
 - Ruby and Sapphire have known party addresses but are otherwise untested.
 - Fire Emblem: only FE7 USA (AE7E); enemy ranges assume every enemy moves
   (some bosses never do) and ignore rain and snow movement costs.
-- Advance Wars 2: only the USA version (AW2E); reach assumes clear weather;
-  CO power star cost is shown at 9000 per star.
+- Advance Wars 2: only the USA version (AW2E); reach assumes clear weather.
 
 ## License and credits
 

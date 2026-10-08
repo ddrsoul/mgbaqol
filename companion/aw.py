@@ -118,7 +118,7 @@ class AdvanceWarsApp(BaseApp):
             self.text(a["co"]["name"] if a["co"] else "?", right - 2, y + 3, MUTED, None, "right")
             line = "G %d" % a["funds"]
             if a["co"] and not a["power"]:
-                stars = a["meter"] / float(aw.STAR)
+                stars = a["meter"] / float(a["star"])
                 line += "  stars %.1f" % stars
                 if a["co"]["scop"] and stars >= a["co"]["scop"]:
                     line += " Super ready"

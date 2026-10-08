@@ -31,7 +31,8 @@ ARMY_SIZE = 0x3C
 CO_FIELD = 0x1D               # index into the CO table (0 Nell, 1 Andy, 2 Max, 3 Olaf...)
 POWER_FIELD = 0x1E            # 0 none, 1 CO Power, 2 Super CO Power
 METER_FIELD = 0x20            # u32: funds value of damage dealt (half) and taken (full)
-STAR = 9000                   # meter per star
+USES_FIELD = 0x25             # powers used so far
+STAR, STAR_STEP = 9000, 1800  # meter per star; every power used adds 1800 (20%) to it
 DAY, CURRENT_ARMY = 0x03004080, 0x03004088
 FOG = 0x03003FCD              # fog of war rule: 1 on
 CURSOR = 0x03003140           # x, y
@@ -339,6 +340,7 @@ class AWMemory(threading.Thread):
             if mine or struct.unpack_from("<I", ar)[0]:
                 armies.append({"index": a, "funds": struct.unpack_from("<I", ar)[0], "co": co, "power": power,
                                "meter": struct.unpack_from("<I", ar, METER_FIELD)[0],
+                               "star": STAR + STAR_STEP * ar[USES_FIELD],
                                "units": len(mine),
                                "value": sum(u["unit"]["cost"] * display_hp(u["hp"]) // 10 for u in mine)})
             units += mine
