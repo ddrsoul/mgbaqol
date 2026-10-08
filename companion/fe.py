@@ -223,8 +223,9 @@ class FireEmblemApp(BaseApp):
             self.message("Pick a target to attack: the odds show here")
             return
         a, d = b
-        live_a = next((u for u in snap["units"] if u["char"]["ptr"] == a["char"] and u["faction"] == "blue"), None)
-        live_d = next((u for u in snap["units"] if u["char"]["ptr"] == d["char"]), None)
+        live_a = next((u for u in snap["units"] if u["char"]["ptr"] == a["char"] and u["faction"] == a["faction"]), None)
+        live_d = next((u for u in snap["units"] if u["char"]["ptr"] == d["char"] and u["faction"] == d["faction"]), None)
+        side_color = {"blue": BLUE_UNIT, "red": RED_UNIT, "green": GREEN_UNIT}
         done = (live_a and live_a["hp"] != a["hp"]) or (live_d and live_d["hp"] != d["hp"]) or not live_d
         x, w = PAD, W - 2 * PAD
         y = TAB_H + PAD
@@ -236,7 +237,8 @@ class FireEmblemApp(BaseApp):
         dbl_a, dbl_d = a["spd"] - d["spd"] >= 4, d["spd"] - a["spd"] >= 4
         counter = d["can_counter"] and wd is not None
         for k, (s, other, dmg, n, dbl, wpn, col) in enumerate((
-                (a, d, dmg_a, n_a, dbl_a, wa, BLUE_UNIT), (d, a, dmg_d, n_d, dbl_d, wd, RED_UNIT))):
+                (a, d, dmg_a, n_a, dbl_a, wa, side_color[a["faction"]]),
+                (d, a, dmg_d, n_d, dbl_d, wd, side_color[d["faction"]]))):
             cx = x + k * (cw + 4)
             self.frame(cx, y, cw, 84)
             self.text(self.fit(s["name"], cw - 16), cx + 8, y + 3, col, None)
@@ -275,13 +277,14 @@ class FireEmblemApp(BaseApp):
             self.text("Last battle (already fought)", x + 8, ty, MUTED, None)
             ty += 16
         kx = x + 8
-        kx += self.tag("Kills: %s" % pct(odds["b_dies"]), kx, ty,
-                       (184, 220, 192) if odds["b_dies"] > 0.5 else (239, 214, 164),
-                       (31, 91, 49) if odds["b_dies"] > 0.5 else (106, 69, 8)) + 6
-        if odds["a_dies"] > 0:
-            self.tag("%s dies: %s" % (a["name"], pct(odds["a_dies"])), kx, ty, (233, 185, 178), (122, 31, 24))
-        elif counter:
-            self.tag("Hurt: %s" % pct(odds["a_hurt"]), kx, ty, (239, 214, 164), (106, 69, 8))
+        for name, p in ((d["name"], odds["b_dies"]), (a["name"], odds["a_dies"])):
+            if p <= 0 and name == a["name"]:
+                continue
+            ours = (d if name == d["name"] else a)["faction"] == "blue"
+            colors = TAG_RED if ours and p > 0 else TAG_GREEN if not ours and p > 0.5 else TAG_AMBER
+            kx += self.tag(self.fit("%s dies: %s" % (name, pct(p)), 140), kx, ty, *colors) + 6
+        if counter and odds["a_dies"] <= 0 and kx < x + w - 90:
+            self.tag("%s hurt: %s" % (a["name"], pct(odds["a_hurt"])), kx, ty, *TAG_AMBER)
         ty += 18
         # What comes after: enemies that reach the tile you attack from.
         threats = snap.get("threats") or {}
@@ -289,7 +292,7 @@ class FireEmblemApp(BaseApp):
         pos = (a["x"], a["y"])
         reach = [reds[s] for s, t in threats.items() if s in reds and pos in t
                  and not (live_d and reds[s] is live_d and odds["b_dies"] > 0.99)]
-        if live_a and not done:
+        if live_a and not done and a["faction"] == "blue":
             mine, _ = fe.equipped(self.rom, live_a)
             terrain = snap["map"]["terrain"]
             tid = terrain[pos[1]][pos[0]] if pos[1] < len(terrain) and pos[0] < len(terrain[0]) else 1

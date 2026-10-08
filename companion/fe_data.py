@@ -500,6 +500,8 @@ class FEMemory(threading.Thread):
             s = struct.unpack_from("<9H", b, 0x5A)
             sides.append({
                 "char": cptr, "x": b[0x10], "y": b[0x11], "max_hp": b[0x12], "hp": b[0x72],
+                # The unit's index says its side: 1-63 yours, 0x40+ other, 0x80+ enemy.
+                "faction": "red" if b[0xB] & 0x80 else "green" if b[0xB] & 0x40 else "blue",
                 "weapon": b[0x48], "weapon_type": b[0x50], "can_counter": b[0x52],
                 "tri_hit": struct.unpack_from("<b", b, 0x53)[0], "tri_atk": struct.unpack_from("<b", b, 0x54)[0],
                 "terrain": b[0x55], "atk": s[0], "def": s[1], "spd": s[2], "hit": s[5], "crit": s[8],

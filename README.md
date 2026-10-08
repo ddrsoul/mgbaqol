@@ -1,10 +1,18 @@
 # mGBA QoL
 
-mGBA for Game Boy Advance plus a live companion for Gen 3 Pokémon games on the
-second screen of dual-screen handhelds running [ROCKNIX](https://rocknix.org).
-The game runs on the top screen as usual; the bottom screen shows your party,
-the current battle, your bag, the region map and the wild Pokémon around you,
-read from the running game.
+mGBA for Game Boy Advance plus a live companion on the second screen of
+dual-screen handhelds running [ROCKNIX](https://rocknix.org). The game runs on
+the top screen as usual; the bottom screen shows what the game keeps hidden or
+buried in menus, read from the running game:
+
+- **Gen 3 Pokémon** (and hacks): your party, the current battle, your bag, the
+  region map and the wild Pokémon around you;
+- **Fire Emblem 7** (*Fire Emblem*, USA): your units with their hidden growth
+  rates, the battle you are choosing with real hit rates and kill odds, the
+  enemies and what makes them dangerous, enemy ranges on the map;
+- **Advance Wars 2: Black Hole Rising** (USA): the armies and CO powers, a
+  damage calculator that follows the game's cursor, your units' fuel, ammo and
+  dangers, enemy reach on the map.
 
 Tested on the Anbernic RG DS.
 
@@ -55,7 +63,7 @@ Only games started with `mgbaqol` get the companion. Everything else in
 RetroArch (saves, savestates, hotkeys, shaders, per-game settings) works the
 same as with the regular `mgba` core, and saves are shared with it.
 
-## Tabs
+## Tabs (Pokémon)
 
 - **Party**: six windows with sprite, types, level, HP and status. Tap one
   for a Summary-style page: stats, held item and the four moves; tap a move
@@ -72,6 +80,43 @@ same as with the regular `mgba` core, and saves are shared with it.
   your location highlighted, *Wild* the wild Pokémon of the current map with
   levels and odds per method (grass, surfing, rock smash, and each rod).
 - **Settings** (menu icon at the right of the tab bar): see below.
+
+## Fire Emblem 7
+
+- **Units**: your army with level and HP; *can die* when the enemies that can
+  reach a unit on their next phase can deal more than its HP, *N reach* when
+  some can. Tap a unit for its page: stats against the class caps, the growth
+  rates the game never shows, items with uses left, weapon ranks and how far
+  the next rank is.
+- **Battle**: the battle the game is forecasting (or the last one fought).
+  FE7 rolls two random numbers and hits when their average is below the shown
+  rate, so the real chance differs: 82 shown is 93 real, 30 shown is 18.
+  Shown here: damage and how many strikes, shown and real hit, crit, the
+  chance each side dies, and how many enemies can reach the tile you attack
+  from on their next phase.
+- **Enemies**: every enemy you can see, bosses first, flagged when they carry
+  a weapon effective against one of your units, a high-crit weapon, an item
+  they drop, or a long-range weapon; tap one for its stats and inventory.
+- **Map**: the chapter map with all units; red where enemies can attack next
+  phase, tap an enemy for its own range (gold), tap a tile for its terrain
+  bonuses. Fog of war hides here what it hides in the game.
+
+## Advance Wars 2
+
+- **Army**: day and whose turn it is; each army's CO, funds, CO power meter
+  (and whether a power is active), unit count and value; your units against
+  the enemy's by type.
+- **Attack**: follows the game's cursor. On an enemy: which of your units can
+  hit it this turn, the damage range with luck, the chance to destroy it and
+  the counterattack. On your unit: which enemies can hit it on their turn and
+  how much. Damage uses the game's own charts and each CO's modifiers from the
+  ROM, including active powers.
+- **Units**: your units with HP, fuel and ammo; planes and ships that will
+  crash or sink for lack of fuel, units that can be destroyed next turn.
+- **Map**: terrain, properties by owner, all units; red where enemies can
+  fire next turn, tap an enemy for its own reach. Under fog of war only what
+  your units and properties can see is shown. The settings menu picks whose
+  side the views take (the first army by default).
 
 ## Controls
 
@@ -167,8 +212,11 @@ EmulationStation ──> runemu.sh --core=mgbaqol
 
 | Path | Contents |
 |---|---|
-| `companion/main.py` | window, tabs, Party view, input, lifecycle |
-| `companion/screens.py` | Battle, Bag, Map and Settings views |
+| `companion/main.py` | picks the companion by the ROM's game code |
+| `companion/base.py` | window, drawing, tabs, touch and stick input, main loop |
+| `companion/pokemon.py`, `screens.py` | Pokémon: Party view; Battle, Bag, Map and Settings views |
+| `companion/fe.py`, `fe_data.py` | Fire Emblem 7: views; ROM tables, text, RAM, ranges, odds |
+| `companion/aw.py`, `aw_data.py` | Advance Wars 2: views; ROM tables, RAM, damage, reach, fog |
 | `companion/memory.py` | finding and reading party, battle, bag and location in RAM |
 | `companion/romdata.py` | finding and reading tables in the ROM, sprites, region map |
 | `companion/gen3.py` | Gen 3 text encoding and Pokémon data decoding |
@@ -209,8 +257,11 @@ pokeemerald-expansion builds) need code changes.
 - `tools/probe/`: console-side helpers. `dev.sh` starts RetroArch with network
   commands and the companion outside ES (`--tab`, `--detail N`,
   `--map-mode Wild`, `--debug-mapsec N` for testing) and takes screenshots
-  with `grim`; `probe_mem.py` reads and decodes the party; `region_png.py` and
-  `sprite_sheet.py` dump what was found in a ROM.
+  with `grim` (`shot` the companion, `top` the game); `dev.sh ra-keys ROM`
+  plus `keys.py "a w1 start"` drive the game with a virtual gamepad;
+  `dump.py` saves EWRAM / IWRAM for diffing; `probe_mem.py` reads and decodes
+  the party; `region_png.py` and `sprite_sheet.py` dump what was found in a
+  ROM.
 
 ## Limitations
 
@@ -219,6 +270,10 @@ pokeemerald-expansion builds) need code changes.
   tried; other dual-screen devices may need their output in
   `start_mgbaqol.sh`.
 - Ruby and Sapphire have known party addresses but are otherwise untested.
+- Fire Emblem: only FE7 USA (AE7E); enemy ranges assume every enemy moves
+  (some bosses never do) and ignore rain and snow movement costs.
+- Advance Wars 2: only the USA version (AW2E); reach assumes clear weather;
+  CO power star cost is shown at 9000 per star.
 
 ## License and credits
 
