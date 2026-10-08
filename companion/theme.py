@@ -49,3 +49,11 @@ TYPE_COLORS = {
 }
 STATUS_COLORS = {"PAR": (200, 168, 32), "PSN": (160, 64, 160), "TOX": (160, 64, 160),
                  "BRN": (224, 104, 48), "FRZ": (104, 176, 192), "SLP": (128, 128, 136)}
+
+# Small chips (background, text) for warnings and labels.
+TAG_RED = ((233, 185, 178), (122, 31, 24))
+TAG_AMBER = ((239, 214, 164), (106, 69, 8))
+TAG_GREEN = ((184, 220, 192), (31, 91, 49))
+TAG_BLUE = ((188, 203, 224), (37, 62, 99))
+TAG_GREY = ((201, 205, 210), (58, 63, 72))
+AMBER = (176, 120, 16)

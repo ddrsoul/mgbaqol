@@ -303,7 +303,7 @@ class Screens:
 
     def animating(self):
         """The Map view blinks the current location, so it needs regular redraws."""
-        return self.ui.get("map_mode", "Map") == "Map"
+        return self.view == "map" and self.ui.get("map_mode", "Map") == "Map"
 
     def wild_modes(self, loc):
         """{mode: entries}, with fishing split per rod."""
